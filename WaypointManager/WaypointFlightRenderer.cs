@@ -4,6 +4,7 @@ using FinePrint;
 using FinePrint.Utilities;
 using KSP.UI.Screens;
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using static WaypointManager.RegisterToolbar;
 
@@ -28,6 +29,11 @@ namespace WaypointManager
         private const double MIN_DISTANCE = 25000;
         private const double MIN_SPEED = MIN_DISTANCE / MIN_TIME;
         private const double FADE_TIME = 20;
+
+        private readonly List<WaypointData> drawOrder = new List<WaypointData>();
+        private readonly Dictionary<WaypointData, double> cameraDistance = new Dictionary<WaypointData, double>();
+        private string hintLabel = null;
+        private Vector3 hintScreenPos;
 
         void Start()
         {
@@ -183,10 +189,14 @@ namespace WaypointManager
                     {
                         WaypointData.CacheWaypointData();
 
-                        foreach (WaypointData wpd in WaypointData.Waypoints)
+                        // Draw the farthest waypoints first, so the nearest end up on top
+                        SortByCameraDistance();
+                        hintLabel = null;
+                        foreach (WaypointData wpd in drawOrder)
                         {
                             DrawWaypoint(wpd);
                         }
+                        DrawHintText();
                     }
                     else cnt = 0;
 
@@ -455,12 +465,36 @@ namespace WaypointManager
                     {
                         label += "\n" + wpd.waypoint.contractReference.Agent.Name;
                     }
-                    float width = 240f;
-                    float height = hintTextStyle.CalcHeight(new GUIContent(label), width);
-                    float yoffset = height + 48.0f;
-                    GUI.Box(new Rect(screenPos.x - width / 2.0f, (float)Screen.height - screenPos.y - yoffset, width, height), label, hintTextStyle);
+                    hintLabel = label;
+                    hintScreenPos = screenPos;
                 }
             }
+        }
+
+        private void SortByCameraDistance()
+        {
+            Vector3d cameraPos = FlightCamera.fetch.transform.position;
+            drawOrder.Clear();
+            cameraDistance.Clear();
+            foreach (WaypointData wpd in WaypointData.Waypoints)
+            {
+                Vector3d pos = wpd.celestialBody.GetWorldSurfacePosition(wpd.waypoint.latitude, wpd.waypoint.longitude, wpd.waypoint.height + wpd.waypoint.altitude);
+                cameraDistance[wpd] = (pos - cameraPos).sqrMagnitude;
+                drawOrder.Add(wpd);
+            }
+            drawOrder.Sort((a, b) => cameraDistance[b].CompareTo(cameraDistance[a]));
+        }
+
+        private void DrawHintText()
+        {
+            if (hintLabel == null || Event.current.type != EventType.Repaint)
+            {
+                return;
+            }
+            float width = 240f;
+            float height = hintTextStyle.CalcHeight(new GUIContent(hintLabel), width);
+            float yoffset = height + 48.0f;
+            GUI.Box(new Rect(hintScreenPos.x - width / 2.0f, (float)Screen.height - hintScreenPos.y - yoffset, width, height), hintLabel, hintTextStyle);
         }
 
 
